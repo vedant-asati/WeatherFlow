@@ -1,0 +1,28 @@
+{
+  "name": "weather-fetcher",
+  "version": "1.0.0",
+  "description": "Async weather fetcher service — fetches 1000+ locations every 60s",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/main.js",
+    "dev": "ts-node src/main.ts",
+    "test:api": "tsc && node dist/test-api.js",
+    "test:all": "tsc && node dist/test-all.js"
+  },
+  "dependencies": {
+    "axios": "^1.7.2",
+    "axios-retry": "^4.4.0",
+    "ioredis": "^5.4.1",
+    "prom-client": "^15.1.3",
+    "express": "^4.19.2",
+    "node-cron": "^3.0.3"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.14.0",
+    "@types/node-cron": "^3.0.11",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.5"
+  }
+}

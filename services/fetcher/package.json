@@ -6,9 +6,11 @@
   "scripts": {
     "build": "tsc",
     "start": "node dist/main.js",
+    "start:mock": "USE_MOCK=true node dist/main.js",
     "dev": "ts-node src/main.ts",
     "test:api": "tsc && node dist/test-api.js",
-    "test:all": "tsc && node dist/test-all.js"
+    "test:all": "tsc && node dist/test-all.js",
+    "probe:rate": "tsc && node dist/probe-rate-limit.js"
   },
   "dependencies": {
     "axios": "^1.7.2",

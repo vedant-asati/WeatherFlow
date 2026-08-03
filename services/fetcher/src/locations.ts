@@ -295,7 +295,9 @@ function getAllLocations(): Location[] {
   for (const city of NAMED_CITIES) add(city);
   for (const grid of buildGrid()) add(grid);
 
-  return result;
+  // Cap at 500 — stays comfortably within Open-Meteo's free tier limits:
+  // 500 req/cycle × 1 cycle/hr = 500 req/hr, 12,000/day (demo use only)
+  return result.slice(0, 500);
 }
 
 export const ALL_LOCATIONS: Location[] = getAllLocations();

@@ -1,34 +1,34 @@
 import Redis from "ioredis";
 import { startScheduler } from "./scheduler";
+import { startWorkers } from "./worker";
+import { RateLimiter } from "./rate-limiter";
 
 const REDIS_URL = process.env.REDIS_URL ?? "redis://localhost:6379";
 
 async function main() {
-  // Connect to Redis
   const redis = new Redis(REDIS_URL);
 
-  redis.on("connect", () => console.log("[redis] connected"));
-  redis.on("error", (err) => console.error("[redis] error:", err));
+  await new Promise<void>((resolve, reject) => {
+    redis.on("connect", () => { console.log("[redis] connected"); resolve(); });
+    redis.on("error",   (err) => { console.error("[redis] error:", err); reject(err); });
+  });
 
-  // Start scheduler — pushes all locations into queue every 60s
-  startScheduler(redis);
+  const limiter = new RateLimiter(redis);
 
-  // Keep the process alive
-  // Workers (CP2b) and healthz (CP2d) will be added here next
+  await startScheduler(redis);
+
+  startWorkers(redis, limiter).catch(err => console.error("[workers] fatal:", err));
+
   console.log("[main] fetcher running — press Ctrl+C to stop");
 
-  // Graceful shutdown
-  process.on("SIGINT", async () => {
+  const shutdown = async () => {
     console.log("[main] shutting down...");
     await redis.quit();
     process.exit(0);
-  });
+  };
 
-  process.on("SIGTERM", async () => {
-    console.log("[main] shutting down...");
-    await redis.quit();
-    process.exit(0);
-  });
+  process.on("SIGINT",  shutdown);
+  process.on("SIGTERM", shutdown);
 }
 
 main().catch((err) => {

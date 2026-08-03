@@ -3,6 +3,11 @@ import axiosRetry from "axios-retry";
 import * as https from "https";
 import { Location } from "./locations";
 import { apiCallsTotal, apiCallsSuccess, apiCallsFailed, apiLatency } from "./metrics";
+import { mockFetchWeather } from "./mock-weather";
+
+// Set USE_MOCK=true to skip real HTTP calls (quota exhausted, offline dev, CI).
+// Everything downstream — Redis stream, processor, InfluxDB — is unaffected.
+const USE_MOCK = process.env.USE_MOCK === "true";
 
 export interface WeatherPayload {
   city_name: string;
@@ -25,10 +30,10 @@ const WMO_CODES: Record<number, string> = {
   95: "Thunderstorm", 96: "Thunderstorm with hail", 99: "Thunderstorm with heavy hail",
 };
 
-// Shared axios instance — IPv4 forced, TCP connections reused
+// Shared axios instance — IPv4 forced, max 50 concurrent sockets
 const httpClient: AxiosInstance = axios.create({
   timeout: 10_000,
-  httpsAgent: new https.Agent({ family: 4 }),
+  httpsAgent: new https.Agent({ family: 4, maxSockets: 50, keepAlive: true }),
 });
 
 // Full-jitter exponential backoff, up to 5 retries
@@ -51,6 +56,8 @@ axiosRetry(httpClient, {
 
 /** Fetch current weather for a single location from Open-Meteo. */
 export async function fetchWeather(location: Location): Promise<WeatherPayload> {
+  if (USE_MOCK) return mockFetchWeather(location);
+
   const end = apiLatency.startTimer();
   apiCallsTotal.inc();
 

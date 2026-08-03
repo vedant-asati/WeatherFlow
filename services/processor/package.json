@@ -1,0 +1,19 @@
+{
+  "name": "weather-processor",
+  "version": "1.0.0",
+  "description": "Reads weather data from Redis stream and writes to InfluxDB",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/main.js",
+    "test:write": "tsc && node dist/test-write.js"
+  },
+  "dependencies": {
+    "@influxdata/influxdb-client": "^1.33.2",
+    "ioredis": "^5.4.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "typescript": "^5.4.5"
+  }
+}

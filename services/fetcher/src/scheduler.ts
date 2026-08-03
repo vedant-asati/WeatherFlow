@@ -2,27 +2,29 @@ import cron from "node-cron";
 import Redis from "ioredis";
 import { ALL_LOCATIONS } from "./locations";
 
-const QUEUE_KEY = "weather:locations:queue";
+const QUEUE_KEY   = "weather:locations:queue";
+const CYCLE_KEY   = "weather:cycle:id";
+const CYCLE_START = "weather:cycle:start_ms";
 
-/**
- * Pushes all locations into the Redis queue as a single pipeline batch.
- * Deletes the previous batch first so stale jobs never pile up.
- */
 export async function enqueueLocations(redis: Redis): Promise<void> {
+  const cycleId = await redis.incr(CYCLE_KEY);
+  const startMs = Date.now();
+
   const pipeline = redis.pipeline();
+  pipeline.set(CYCLE_START, String(startMs));
   pipeline.del(QUEUE_KEY);
   for (const loc of ALL_LOCATIONS) {
     pipeline.lpush(QUEUE_KEY, JSON.stringify(loc));
   }
   await pipeline.exec();
-  console.log(`[scheduler] enqueued ${ALL_LOCATIONS.length} locations`);
+
+  console.log(`\n${"━".repeat(56)}`);
+  console.log(` [scheduler] Cycle #${cycleId} started — ${ALL_LOCATIONS.length} locations enqueued`);
+  console.log(`${"━".repeat(56)}\n`);
 }
 
-/**
- * Starts the cron job — fires every 60s and once immediately on startup.
- */
-export function startScheduler(redis: Redis): void {
-  enqueueLocations(redis); // fire immediately, don't wait 60s
+export async function startScheduler(redis: Redis): Promise<void> {
+  await enqueueLocations(redis);
 
   cron.schedule("* * * * *", () => {
     enqueueLocations(redis).catch(err =>
@@ -30,5 +32,5 @@ export function startScheduler(redis: Redis): void {
     );
   });
 
-  console.log("[scheduler] started — enqueuing every 60s");
+  console.log("[scheduler] started — enqueuing every 60 seconds");
 }

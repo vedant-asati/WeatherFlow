@@ -1,58 +1,69 @@
-version: "3.9"
-
-# ─────────────────────────────────────────────────────────────
-#  Weather Telemetry Pipeline — local development stack
-#
-#  Services:
-#    redis     — job queue + rate limiter + stream broker
-#    influxdb  — time-series database for weather measurements
-#
-#  To start:   docker compose up
-#  To stop:    docker compose down
-#  To wipe DB: docker compose down -v   (removes named volumes)
-# ─────────────────────────────────────────────────────────────
+# Weather Telemetry Pipeline
+# Start:     docker compose up --build
+# Stop:      docker compose down
+# Wipe data: docker compose down -v
 
 services:
 
-  # ── Redis ──────────────────────────────────────────────────
   redis:
     image: redis:7-alpine
     container_name: weather_redis
     ports:
-      - "6379:6379"         # same port your fetcher already connects to
+      - "6379:6379"
     volumes:
-      - redis_data:/data    # persist queue/stream across restarts
+      - redis_data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 3s
       retries: 5
 
-  # ── InfluxDB ───────────────────────────────────────────────
   influxdb:
     image: influxdb:2.7-alpine
     container_name: weather_influxdb
     ports:
-      - "8086:8086"         # UI + API both on 8086
+      - "8086:8086"
     environment:
-      # These env vars are only used on FIRST boot to initialise the DB.
-      # After that they're stored in the volume and ignored.
       DOCKER_INFLUXDB_INIT_MODE:        setup
       DOCKER_INFLUXDB_INIT_USERNAME:    admin
       DOCKER_INFLUXDB_INIT_PASSWORD:    adminpassword
       DOCKER_INFLUXDB_INIT_ORG:         weather_org
       DOCKER_INFLUXDB_INIT_BUCKET:      weather_bucket
-      DOCKER_INFLUXDB_INIT_RETENTION:   30d     # auto-delete data older than 30 days
+      DOCKER_INFLUXDB_INIT_RETENTION:   30d
       DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: my-super-secret-token
     volumes:
-      - influxdb_data:/var/lib/influxdb2   # persist all measurements
+      - influxdb_data:/var/lib/influxdb2
     healthcheck:
       test: ["CMD", "influx", "ping"]
       interval: 10s
       timeout: 5s
       retries: 10
 
-# ── Named volumes (persist data between `docker compose up/down`) ──
+  fetcher:
+    build: ./services/fetcher
+    container_name: weather_fetcher
+    environment:
+      REDIS_URL: redis://redis:6379
+      # USE_MOCK: "true"   ← uncomment to use mock data instead of real API
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  processor:
+    build: ./services/processor
+    container_name: weather_processor
+    environment:
+      REDIS_URL:     redis://redis:6379
+      INFLUX_URL:    http://influxdb:8086
+      INFLUX_TOKEN:  my-super-secret-token
+      INFLUX_ORG:    weather_org
+      INFLUX_BUCKET: weather_bucket
+    depends_on:
+      redis:
+        condition: service_healthy
+      influxdb:
+        condition: service_healthy
+
 volumes:
   redis_data:
   influxdb_data:

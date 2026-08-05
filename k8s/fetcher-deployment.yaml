@@ -1,0 +1,31 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fetcher
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fetcher
+  template:
+    metadata:
+      labels:
+        app: fetcher
+    spec:
+      containers:
+        - name: fetcher
+          image: pipeline-fetcher:latest
+          envFrom:
+            - configMapRef:
+                name: weather-config
+          # To use mock data, uncomment:
+          # env:
+          #   - name: USE_MOCK
+          #     value: "true"
+          resources:
+            requests:
+              cpu: 200m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi

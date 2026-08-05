@@ -1,0 +1,29 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: processor
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: processor
+  template:
+    metadata:
+      labels:
+        app: processor
+    spec:
+      containers:
+        - name: processor
+          image: pipeline-processor:latest
+          envFrom:
+            - configMapRef:
+                name: weather-config
+            - secretRef:
+                name: weather-secret
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi

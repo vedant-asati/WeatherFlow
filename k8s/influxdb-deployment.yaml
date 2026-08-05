@@ -1,0 +1,71 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: influxdb
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: influxdb
+  template:
+    metadata:
+      labels:
+        app: influxdb
+    spec:
+      containers:
+        - name: influxdb
+          image: influxdb:2.7-alpine
+          ports:
+            - containerPort: 8086
+          env:
+            - name: DOCKER_INFLUXDB_INIT_MODE
+              value: setup
+            - name: DOCKER_INFLUXDB_INIT_USERNAME
+              value: admin
+            - name: DOCKER_INFLUXDB_INIT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: weather-secret
+                  key: INFLUX_ADMIN_PASSWORD
+            - name: DOCKER_INFLUXDB_INIT_ORG
+              valueFrom:
+                configMapKeyRef:
+                  name: weather-config
+                  key: INFLUX_ORG
+            - name: DOCKER_INFLUXDB_INIT_BUCKET
+              valueFrom:
+                configMapKeyRef:
+                  name: weather-config
+                  key: INFLUX_BUCKET
+            - name: DOCKER_INFLUXDB_INIT_RETENTION
+              value: 30d
+            - name: DOCKER_INFLUXDB_INIT_ADMIN_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: weather-secret
+                  key: INFLUX_TOKEN
+          resources:
+            requests:
+              cpu: 200m
+              memory: 512Mi
+            limits:
+              cpu: 500m
+              memory: 1Gi
+          readinessProbe:
+            httpGet:
+              path: /ping
+              port: 8086
+            initialDelaySeconds: 10
+            periodSeconds: 10
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: influxdb-service
+spec:
+  selector:
+    app: influxdb
+  ports:
+    - port: 8086
+      targetPort: 8086

@@ -73,7 +73,7 @@ from(bucket: "weather_bucket")
 from(bucket: "weather_bucket")
   |> range(start: -1h)
   |> filter(fn: (r) => r._measurement == "weather")
-  |> pivot(rowKey: ["_time", "city_name"], columnKey: ["_field"], value: ["_value"])
+  |> pivot(rowKey: ["_time", "city_name"], columnKey: ["_field"], valueColumn: ["_value"])
   |> keep(columns: ["_time", "city_name", "weather_condition", "temperature", "latitude", "longitude"])
 ```
 

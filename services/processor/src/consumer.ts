@@ -45,13 +45,59 @@ function parseMessage(id: string, fields: string[]): WeatherRecord {
   };
 }
 
+async function processMessages(
+  redis: Redis,
+  messages: [string, string[]][],
+  onRecord: (record: WeatherRecord) => Promise<void>
+): Promise<void> {
+  for (const [id, fields] of messages) {
+    try {
+      const record = parseMessage(id, fields);
+      await onRecord(record);
+      // XACK only after successful write — if we crash before this,
+      // the message stays pending and gets redelivered on restart.
+      // InfluxDB deduplicates by (measurement + tags + timestamp) so
+      // reprocessing the same message is safe — it just overwrites.
+      await redis.xack(STREAM_KEY, GROUP_NAME, id);
+    } catch (err: any) {
+      console.error(`[consumer] failed to process message ${id}: ${err.message}`);
+    }
+  }
+}
+
 export async function startConsumer(
   redis: Redis,
   onRecord: (record: WeatherRecord) => Promise<void>
 ): Promise<void> {
   await ensureGroup(redis);
+
+  // On startup, drain any pending (unacknowledged) messages first.
+  // These are messages delivered before a previous crash but never XACKed.
+  // "0" returns pending messages for this consumer instead of new ones.
+  let pendingCount = 0;
+  while (true) {
+    const pending = await redis.xreadgroup(
+      "GROUP", GROUP_NAME, CONSUMER_NAME,
+      "COUNT", BATCH_SIZE,
+      "STREAMS", STREAM_KEY,
+      "0"
+    ) as [string, [string, string[]][]][] | null;
+
+    if (!pending) break;
+    const [, messages] = pending[0];
+    if (!messages || messages.length === 0) break;
+
+    await processMessages(redis, messages, onRecord);
+    pendingCount += messages.length;
+  }
+
+  if (pendingCount > 0) {
+    console.log(`[consumer] recovered ${pendingCount} pending messages from before last restart`);
+  }
+
   console.log(`[consumer] listening on stream "${STREAM_KEY}"...`);
 
+  // Read new messages normally
   while (true) {
     const response = await redis.xreadgroup(
       "GROUP", GROUP_NAME, CONSUMER_NAME,
@@ -66,14 +112,6 @@ export async function startConsumer(
     const [, messages] = response[0];
     if (!messages || messages.length === 0) continue;
 
-    for (const [id, fields] of messages) {
-      try {
-        const record = parseMessage(id, fields);
-        await onRecord(record);
-        await redis.xack(STREAM_KEY, GROUP_NAME, id);
-      } catch (err: any) {
-        console.error(`[consumer] failed to process message ${id}: ${err.message}`);
-      }
-    }
+    await processMessages(redis, messages, onRecord);
   }
 }

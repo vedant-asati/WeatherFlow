@@ -2,6 +2,7 @@ import Redis from "ioredis";
 import { startScheduler } from "./scheduler";
 import { startWorkers } from "./worker";
 import { RateLimiter } from "./rate-limiter";
+import { startServer } from "./server";
 
 const REDIS_URL = process.env.REDIS_URL ?? "redis://localhost:6379";
 
@@ -14,6 +15,8 @@ async function main() {
   });
 
   const limiter = new RateLimiter(redis);
+
+  startServer();
 
   await startScheduler(redis);
 

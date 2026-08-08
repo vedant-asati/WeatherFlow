@@ -2,6 +2,8 @@
 
 A distributed data ingestion pipeline that fetches real-time weather telemetry for 500 geographical locations globally and stores it in a time-series database. Built with TypeScript/Node.js, Redis, and InfluxDB.
 
+> **Note on location count:** The pipeline is architected for 1,214 locations (240 named cities + 966 grid points at 8° resolution covering the entire globe). It is currently capped at 500 due to Open-Meteo's free tier quota of 10,000 req/day — at 500 locations/cycle × 1 cycle/min, the daily limit would be exceeded within minutes at full scale. To remove the cap, change `slice(0, 500)` to `slice(0, 1214)` in `services/fetcher/src/locations.ts`. The rate limiter, worker pool, and Redis stream architecture handle the full 1,214 locations without any other changes.
+
 ---
 
 ## Architecture

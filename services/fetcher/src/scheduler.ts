@@ -3,8 +3,11 @@ import Redis from "ioredis";
 import { ALL_LOCATIONS } from "./locations";
 
 const QUEUE_KEY   = "weather:locations:queue";
+const STREAM_KEY  = "weather:raw";
 const CYCLE_KEY   = "weather:cycle:id";
 const CYCLE_START = "weather:cycle:start_ms";
+
+const BACKPRESSURE_THRESHOLD = parseInt(process.env.BACKPRESSURE_THRESHOLD ?? "5000");
 
 export async function enqueueLocations(redis: Redis): Promise<void> {
   const cycleId = await redis.incr(CYCLE_KEY);
@@ -24,13 +27,23 @@ export async function enqueueLocations(redis: Redis): Promise<void> {
 }
 
 export async function startScheduler(redis: Redis): Promise<void> {
+  // First cycle always runs unconditionally so the pipeline starts immediately
   await enqueueLocations(redis);
 
-  cron.schedule("* * * * *", () => {
-    enqueueLocations(redis).catch(err =>
-      console.error("[scheduler] enqueue error:", err)
-    );
+  cron.schedule("* * * * *", async () => {
+    try {
+      const streamLen = await redis.xlen(STREAM_KEY);
+      if (streamLen > BACKPRESSURE_THRESHOLD) {
+        console.warn(
+          `[scheduler] backpressure: stream depth ${streamLen} > ${BACKPRESSURE_THRESHOLD}, skipping cycle`
+        );
+        return;
+      }
+      await enqueueLocations(redis);
+    } catch (err) {
+      console.error("[scheduler] enqueue error:", err);
+    }
   });
 
-  console.log("[scheduler] started — enqueuing every 60 seconds");
+  console.log(`[scheduler] started — enqueuing every 60s (backpressure threshold: ${BACKPRESSURE_THRESHOLD})`);
 }

@@ -1,0 +1,36 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dashboard
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dashboard
+  template:
+    metadata:
+      labels:
+        app: dashboard
+    spec:
+      containers:
+        - name: dashboard
+          image: weather-dashboard:latest
+          ports:
+            - containerPort: 4000
+          envFrom:
+            - configMapRef:
+                name: weather-config
+            - secretRef:
+                name: weather-secrets
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dashboard-service
+spec:
+  selector:
+    app: dashboard
+  ports:
+    - port: 4000
+      targetPort: 4000
+  type: ClusterIP

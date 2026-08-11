@@ -66,6 +66,23 @@ services:
       influxdb:
         condition: service_healthy
 
+  dashboard:
+    build: ./services/dashboard
+    container_name: weather_dashboard
+    ports:
+      - "4000:4000"
+    environment:
+      REDIS_URL:     redis://redis:6379
+      INFLUX_URL:    http://influxdb:8086
+      INFLUX_TOKEN:  my-super-secret-token
+      INFLUX_ORG:    weather_org
+      INFLUX_BUCKET: weather_bucket
+    depends_on:
+      redis:
+        condition: service_healthy
+      influxdb:
+        condition: service_healthy
+
 volumes:
   redis_data:
   influxdb_data:

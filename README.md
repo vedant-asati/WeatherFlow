@@ -1,6 +1,6 @@
 # Weather Telemetry Pipeline
 
-A distributed data ingestion pipeline that fetches real-time weather telemetry for 500 geographical locations globally and stores it in a time-series database. Built with TypeScript/Node.js, Redis, and InfluxDB.
+A distributed data ingestion pipeline that fetches real-time weather telemetry for 500 geographical locations globally and stores it in a time-series database. Includes a real-time monitoring dashboard with REST APIs. Built with TypeScript/Node.js, Redis, and InfluxDB.
 
 > **Note on location count:** The pipeline is architected for 1,214 locations (240 named cities + 966 grid points at 8° resolution covering the entire globe). It is currently capped at 500 due to Open-Meteo's free tier quota of 10,000 req/day — at 500 locations/cycle × 1 cycle/min, the daily limit would be exceeded within minutes at full scale. To remove the cap, change `slice(0, 500)` to `slice(0, 1214)` in `services/fetcher/src/locations.ts`. The rate limiter, worker pool, and Redis stream architecture handle the full 1,214 locations without any other changes.
 
@@ -14,9 +14,10 @@ Open-Meteo API
       ▼
  [Fetcher Service]
    node-cron scheduler — enqueues 500 locations every 60s
+   backpressure check — skips cycle if stream depth > threshold
    50 async workers   — BRPOP from queue, fetch, XADD to stream
    Express server     — /metrics (Prometheus) + /healthz
-      │  XADD
+      │  XADD (MAXLEN ~10000 — stream trimming)
       ▼
  Redis Stream (weather:raw)
       │  XREADGROUP (consumer group, pending recovery on restart)
@@ -25,10 +26,12 @@ Open-Meteo API
    reads messages → writes to InfluxDB → XACK
       │  write (idempotent by timestamp)
       ▼
- InfluxDB (weather_bucket)
-   measurement: weather
-   tags:   city_name, weather_condition
-   fields: temperature, latitude, longitude
+ InfluxDB (weather_bucket)              [Dashboard Service]
+   measurement: weather             reads Redis + InfluxDB
+   tags:   city_name,               REST APIs + Web UI
+           weather_condition         http://localhost:4000
+   fields: temperature,
+           latitude, longitude
    retention: 30 days
 ```
 
@@ -42,17 +45,19 @@ Responsible for fetching weather data from the Open-Meteo API and publishing it 
 
 **Scheduler (`scheduler.ts`)**
 - Uses `node-cron` to enqueue all 500 locations into a Redis LIST every 60 seconds
-- On startup, awaits the first enqueue before starting workers — ensures the queue is populated before any worker tries to pop from it
+- **Backpressure**: before each cycle, checks `XLEN weather:raw`. If stream depth exceeds the threshold (default 5000, configurable via `BACKPRESSURE_THRESHOLD`), the cycle is skipped and a warning is logged. Prevents flooding Redis when the processor can't keep up.
+- First cycle always runs unconditionally — ensures the pipeline starts immediately
 - Each cycle gets a monotonic ID and a start timestamp stored in Redis, used by the analytics reporter
 
 **Workers (`worker.ts`)**
 - 50 concurrent async workers, each running an infinite loop: `BRPOP` → `acquire token` → `fetch` → `XADD`
+- **Stream trimming**: `XADD` uses `MAXLEN ~ 10000` to cap the stream at approximately 10,000 entries. The `~` flag lets Redis trim in efficient batches rather than exact per-write trimming. Prevents unbounded memory growth.
 - All 50 start simultaneously — the rate limiter handles concurrency, not startup staggering
 - Per-second analytics reporter prints live cycle progress: requests/sec, success/fail counts, avg + p99 latency
 
 **Rate Limiter (`rate-limiter.ts`)**
 - Token bucket algorithm implemented via an atomic Redis Lua script
-- Lua ensures no two workers can "double-spend" the same token even with 50 concurrent goroutines hitting Redis simultaneously
+- Lua ensures no two workers can "double-spend" the same token even with 50 concurrent async workers hitting Redis simultaneously
 - Cap: 8 tokens/sec — comfortably under Open-Meteo's 600 req/min free tier limit
 - Cooldown mode: if a 429 slips through, a Redis key with a TTL is set — all workers sleep until it expires (`PTTL` for exact sleep duration, not polling)
 - Backed by Redis so it works correctly across multiple fetcher replicas in production
@@ -76,6 +81,29 @@ Responsible for fetching weather data from the Open-Meteo API and publishing it 
   - `GET /healthz` — probes Open-Meteo reachability, returns `200 ok` or `503 degraded`
 
 ---
+
+### Dashboard Service (`services/dashboard/`)
+
+A read-only microservice that provides REST APIs and a web dashboard for monitoring the pipeline and exploring collected weather data. Separated from the fetcher and processor because it needs read access to **both** Redis (pipeline state) and InfluxDB (weather data queries) — neither the fetcher nor the processor has both.
+
+**REST API Endpoints:**
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /api/pipeline/status` | Cycle ID, queue depth, stream length, pending count, rate-limiter cooldown, backpressure state |
+| `GET /api/weather/latest` | Latest temperature + condition for each city (optional `?city=` filter) |
+| `GET /api/weather/summary` | Global stats: total cities, avg/min/max temp, most common condition |
+| `GET /api/weather/:city/history?range=6h` | Temperature time-series for one city (ranges: 1h, 6h, 12h, 1d, 3d, 7d) |
+| `GET /api/stream/recent?count=20` | Last N raw entries from the Redis stream |
+
+**Web Dashboard (`public/`):**
+- Vanilla HTML/CSS/JS — no build step, no frontend framework
+- Dark theme, responsive layout, polls APIs every 5 seconds
+- Pipeline status bar with color-coded backpressure indicator (green/yellow/red)
+- Summary cards (cities count, avg/min/max temp, top condition)
+- Sortable, searchable weather data table — click any city to drill into its history
+- City detail panel with a Chart.js temperature sparkline (selectable time range)
+- Live stream feed showing raw data flowing through the pipeline
 
 ### Processor Service (`services/processor/`)
 
@@ -129,7 +157,7 @@ Tags are indexed — used for filtering and grouping. Fields are the measured va
 **Prerequisites:** Docker, Docker Compose
 
 ```bash
-# Start all four services (Redis + InfluxDB + fetcher + processor)
+# Start all five services (Redis + InfluxDB + fetcher + processor + dashboard)
 docker compose up --build
 
 # Use mock data instead of real API (no quota consumed)
@@ -146,6 +174,9 @@ docker compose down -v
 **Endpoints once running:**
 | URL | Description |
 |-----|-------------|
+| http://localhost:4000 | Dashboard UI |
+| http://localhost:4000/api/pipeline/status | Pipeline status API |
+| http://localhost:4000/api/weather/latest | Latest weather data API |
 | http://localhost:8086 | InfluxDB UI (admin / adminpassword) |
 | http://localhost:3001/metrics | Prometheus metrics |
 | http://localhost:3001/healthz | Health check |
@@ -222,6 +253,7 @@ kubectl delete -f k8s/
 | `influxdb-deployment.yaml` | InfluxDB Deployment + internal Service (`influxdb-service:8086`) |
 | `fetcher-deployment.yaml` | Fetcher Deployment + Service (exposes port 3000 for metrics) |
 | `processor-deployment.yaml` | Processor Deployment |
+| `dashboard-deployment.yaml` | Dashboard Deployment + Service (port 4000) |
 
 Services use K8s internal DNS — pods reach each other by service name, not IP.
 
@@ -247,10 +279,12 @@ For sustained production use, either purchase the Open-Meteo commercial plan ($2
 
 | Variable | Service | Default | Description |
 |----------|---------|---------|-------------|
-| `REDIS_URL` | both | `redis://localhost:6379` | Redis connection URL |
-| `INFLUX_URL` | processor | `http://localhost:8086` | InfluxDB connection URL |
-| `INFLUX_TOKEN` | processor | `my-super-secret-token` | InfluxDB API token |
-| `INFLUX_ORG` | processor | `weather_org` | InfluxDB organisation |
-| `INFLUX_BUCKET` | processor | `weather_bucket` | InfluxDB bucket name |
+| `REDIS_URL` | fetcher, processor, dashboard | `redis://localhost:6379` | Redis connection URL |
+| `INFLUX_URL` | processor, dashboard | `http://localhost:8086` | InfluxDB connection URL |
+| `INFLUX_TOKEN` | processor, dashboard | `my-super-secret-token` | InfluxDB API token |
+| `INFLUX_ORG` | processor, dashboard | `weather_org` | InfluxDB organisation |
+| `INFLUX_BUCKET` | processor, dashboard | `weather_bucket` | InfluxDB bucket name |
 | `USE_MOCK` | fetcher | unset | Set to `"true"` to use mock data |
 | `METRICS_PORT` | fetcher | `3000` | Port for `/metrics` and `/healthz` |
+| `PORT` | dashboard | `4000` | Dashboard server port |
+| `BACKPRESSURE_THRESHOLD` | fetcher | `5000` | Stream depth at which fetcher skips a cycle |

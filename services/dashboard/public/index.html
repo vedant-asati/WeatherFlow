@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Weather Telemetry — Dashboard</title>
+  <meta name="description" content="Real-time monitoring dashboard for the Weather-Telemetry data pipeline">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+</head>
+<body>
+
+  <!-- Header -->
+  <header id="header">
+    <div class="header-left">
+      <h1>Weather Telemetry</h1>
+      <span class="header-subtitle">Pipeline Dashboard</span>
+    </div>
+    <div class="header-right">
+      <span id="last-updated" class="last-updated">—</span>
+      <button id="refresh-toggle" class="btn-toggle" title="Toggle auto-refresh">
+        <span class="toggle-dot"></span>
+        Auto
+      </button>
+    </div>
+  </header>
+
+  <!-- Pipeline Status Bar -->
+  <section id="pipeline-bar" class="pipeline-bar">
+    <div class="status-chip" id="chip-cycle">
+      <span class="chip-label">Cycle</span>
+      <span class="chip-value" id="val-cycle">—</span>
+    </div>
+    <div class="status-chip" id="chip-queue">
+      <span class="chip-label">Queue</span>
+      <span class="chip-value" id="val-queue">—</span>
+    </div>
+    <div class="status-chip" id="chip-stream">
+      <span class="chip-label">Stream</span>
+      <span class="chip-value" id="val-stream">—</span>
+    </div>
+    <div class="status-chip" id="chip-pending">
+      <span class="chip-label">Pending</span>
+      <span class="chip-value" id="val-pending">—</span>
+    </div>
+    <div class="status-chip" id="chip-backpressure">
+      <span class="chip-label">Backpressure</span>
+      <span class="chip-value" id="val-backpressure">—</span>
+    </div>
+    <div class="status-chip" id="chip-cooldown">
+      <span class="chip-label">Rate Limiter</span>
+      <span class="chip-value" id="val-cooldown">—</span>
+    </div>
+  </section>
+
+  <!-- Main Content Grid -->
+  <main class="main-grid">
+
+    <!-- Left: Summary Cards + Weather Table -->
+    <div class="left-column">
+
+      <!-- Summary Cards -->
+      <section class="summary-cards">
+        <div class="card summary-card">
+          <span class="card-icon">🌍</span>
+          <div class="card-body">
+            <span class="card-number" id="sum-cities">—</span>
+            <span class="card-label">Cities</span>
+          </div>
+        </div>
+        <div class="card summary-card">
+          <span class="card-icon">🌡️</span>
+          <div class="card-body">
+            <span class="card-number" id="sum-avg-temp">—</span>
+            <span class="card-label">Avg Temp</span>
+          </div>
+        </div>
+        <div class="card summary-card">
+          <span class="card-icon">❄️</span>
+          <div class="card-body">
+            <span class="card-number" id="sum-min-temp">—</span>
+            <span class="card-label">Min</span>
+          </div>
+        </div>
+        <div class="card summary-card">
+          <span class="card-icon">🔥</span>
+          <div class="card-body">
+            <span class="card-number" id="sum-max-temp">—</span>
+            <span class="card-label">Max</span>
+          </div>
+        </div>
+        <div class="card summary-card">
+          <span class="card-icon">☁️</span>
+          <div class="card-body">
+            <span class="card-number" id="sum-condition">—</span>
+            <span class="card-label">Top Condition</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Weather Table -->
+      <section class="card table-card">
+        <div class="table-header">
+          <h2>Latest Readings</h2>
+          <input
+            type="text"
+            id="city-search"
+            class="search-input"
+            placeholder="Search cities..."
+          />
+        </div>
+        <div class="table-scroll">
+          <table id="weather-table">
+            <thead>
+              <tr>
+                <th data-sort="city_name">City ↕</th>
+                <th data-sort="temperature">Temp (°C) ↕</th>
+                <th data-sort="weather_condition">Condition ↕</th>
+                <th data-sort="recorded_at">Time ↕</th>
+              </tr>
+            </thead>
+            <tbody id="weather-tbody">
+              <tr><td colspan="4" class="empty-state">Waiting for data...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+
+    <!-- Right: City Detail + Live Stream -->
+    <div class="right-column">
+
+      <!-- City Detail Panel -->
+      <section class="card detail-card" id="city-detail">
+        <h2 id="detail-city-name">Select a city</h2>
+        <p id="detail-hint" class="hint-text">Click any row in the table to view temperature history</p>
+        <div id="chart-container" class="chart-container" style="display:none;">
+          <div class="chart-controls">
+            <button class="range-btn active" data-range="1h">1H</button>
+            <button class="range-btn" data-range="6h">6H</button>
+            <button class="range-btn" data-range="12h">12H</button>
+            <button class="range-btn" data-range="1d">1D</button>
+            <button class="range-btn" data-range="3d">3D</button>
+            <button class="range-btn" data-range="7d">7D</button>
+          </div>
+          <canvas id="temp-chart"></canvas>
+        </div>
+      </section>
+
+      <!-- Live Stream Feed -->
+      <section class="card stream-card">
+        <h2>Live Stream Feed</h2>
+        <div id="stream-feed" class="stream-feed">
+          <div class="empty-state">Waiting for stream entries...</div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <script src="/app.js"></script>
+</body>
+</html>

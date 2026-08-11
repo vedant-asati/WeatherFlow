@@ -50,7 +50,7 @@ async function runWorker(id: number, redis: Redis, limiter: RateLimiter): Promis
       bucket.latencies.push(latencyMs);
 
       await redis.xadd(
-        STREAM_KEY, "*",
+        STREAM_KEY, "MAXLEN", "~", "10000", "*",
         "city_name",         result.city_name,
         "latitude",          String(result.latitude),
         "longitude",         String(result.longitude),

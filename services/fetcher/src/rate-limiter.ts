@@ -4,8 +4,9 @@ import { rateLimiterDenials } from "./metrics";
 // Token bucket: 8 req/s cap across all workers via atomic Lua script.
 // Cooldown: if a 429 slips through, all workers pause for COOLDOWN_S seconds.
 
-const BUCKET_KEY   = "rate_limiter:weather_api:bucket";
-const COOLDOWN_KEY = "rate_limiter:weather_api:cooldown";
+const BUCKET_KEY         = "rate_limiter:weather_api:bucket";
+const COOLDOWN_KEY       = "rate_limiter:weather_api:cooldown";
+const COOLDOWN_COUNT_KEY = "rate_limiter:weather_api:cooldown_count";
 
 const MAX_RPS    = 8;
 const CAPACITY   = 8;
@@ -64,8 +65,13 @@ export class RateLimiter {
   }
 
   async notifyThrottled(): Promise<void> {
-    await this.redis.set(COOLDOWN_KEY, "1", "EX", COOLDOWN_S, "NX");
-    console.warn(`[rate-limiter] 429 — cooling down all workers for ${COOLDOWN_S}s`);
+    // NX = only set if not already in cooldown — avoids double-counting
+    // when multiple workers hit 429 simultaneously
+    const wasSet = await this.redis.set(COOLDOWN_KEY, "1", "EX", COOLDOWN_S, "NX");
+    if (wasSet === "OK") {
+      await this.redis.incr(COOLDOWN_COUNT_KEY);
+      console.warn(`[rate-limiter] 429 — cooling down all workers for ${COOLDOWN_S}s`);
+    }
   }
 }
 

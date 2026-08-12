@@ -11,7 +11,7 @@ export function createWeatherRouter(queryApi: QueryApi, bucket: string): Router 
 
       let flux = `
         from(bucket: "${bucket}")
-          |> range(start: -1h)
+          |> range(start: -2h)
           |> filter(fn: (r) => r._measurement == "weather")
           |> filter(fn: (r) => r._field == "temperature")
       `;
@@ -55,7 +55,7 @@ export function createWeatherRouter(queryApi: QueryApi, bucket: string): Router 
       // Get temperature stats from the last hour
       const statFlux = `
         from(bucket: "${bucket}")
-          |> range(start: -1h)
+          |> range(start: -2h)
           |> filter(fn: (r) => r._measurement == "weather")
           |> filter(fn: (r) => r._field == "temperature")
           |> group(columns: ["city_name"])
@@ -63,8 +63,7 @@ export function createWeatherRouter(queryApi: QueryApi, bucket: string): Router 
           |> group()
       `;
 
-      const temps: number[] = [];
-      const cities = new Set<string>();
+      const readings: Array<{ city: string; temp: number }> = [];
       const conditions = new Map<string, number>();
 
       await new Promise<void>((resolve, reject) => {
@@ -75,8 +74,7 @@ export function createWeatherRouter(queryApi: QueryApi, bucket: string): Router 
             const city = obj.city_name as string;
             const cond = (obj.weather_condition as string) ?? "unknown";
 
-            temps.push(temp);
-            cities.add(city);
+            readings.push({ city, temp });
             conditions.set(cond, (conditions.get(cond) ?? 0) + 1);
           },
           error: reject,
@@ -91,18 +89,21 @@ export function createWeatherRouter(queryApi: QueryApi, bucket: string): Router 
         if (count > topCount) { topCondition = cond; topCount = count; }
       }
 
-      const avg = temps.length > 0
-        ? Math.round((temps.reduce((a, b) => a + b, 0) / temps.length) * 10) / 10
-        : 0;
+      // Hottest and coldest city
+      let hottestCity = { name: "—", temp: -Infinity };
+      let coldestCity = { name: "—", temp: Infinity };
+      for (const { city, temp } of readings) {
+        if (temp > hottestCity.temp) hottestCity = { name: city, temp };
+        if (temp < coldestCity.temp) coldestCity = { name: city, temp };
+      }
 
       res.json({
-        totalCities:       cities.size,
-        avgTemperature:    avg,
-        minTemperature:    temps.length > 0 ? Math.min(...temps) : 0,
-        maxTemperature:    temps.length > 0 ? Math.max(...temps) : 0,
-        topCondition:      topCondition,
-        totalReadings:     temps.length,
-        timestamp:         new Date().toISOString(),
+        totalCities:  new Set(readings.map(r => r.city)).size,
+        hottestCity:  readings.length > 0 ? { name: hottestCity.name, temp: Math.round(hottestCity.temp * 10) / 10 } : null,
+        coldestCity:  readings.length > 0 ? { name: coldestCity.name, temp: Math.round(coldestCity.temp * 10) / 10 } : null,
+        topCondition: topCondition,
+        totalReadings: readings.length,
+        timestamp:    new Date().toISOString(),
       });
     } catch (err: any) {
       console.error("[weather] summary error:", err.message);

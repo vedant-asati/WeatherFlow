@@ -6,8 +6,37 @@ const QUEUE_KEY   = "weather:locations:queue";
 const STREAM_KEY  = "weather:raw";
 const CYCLE_KEY   = "weather:cycle:id";
 const CYCLE_START = "weather:cycle:start_ms";
+const GROUP_NAME  = "processor-group";
 
 const BACKPRESSURE_THRESHOLD = parseInt(process.env.BACKPRESSURE_THRESHOLD ?? "5000");
+
+/**
+ * Get the number of un-ACKed (pending) messages in the processor consumer group.
+ * This is the correct backpressure signal — unlike XLEN, it only counts
+ * messages that the processor hasn't finished processing yet.
+ */
+async function getPendingCount(redis: Redis): Promise<number> {
+  try {
+    const groups = await redis.xinfo("GROUPS", STREAM_KEY) as any[];
+    const group = groups.find((g: any) => {
+      if (Array.isArray(g)) {
+        const nameIdx = g.indexOf("name");
+        return nameIdx !== -1 && g[nameIdx + 1] === GROUP_NAME;
+      }
+      return g?.name === GROUP_NAME;
+    });
+
+    if (!group) return 0;
+
+    if (Array.isArray(group)) {
+      const pelIdx = group.indexOf("pel-count");
+      return pelIdx !== -1 ? parseInt(group[pelIdx + 1]) || 0 : 0;
+    }
+    return group["pel-count"] ?? 0;
+  } catch {
+    return 0; // Stream or group may not exist yet
+  }
+}
 
 export async function enqueueLocations(redis: Redis): Promise<void> {
   const cycleId = await redis.incr(CYCLE_KEY);
@@ -32,10 +61,10 @@ export async function startScheduler(redis: Redis): Promise<void> {
 
   cron.schedule("* * * * *", async () => {
     try {
-      const streamLen = await redis.xlen(STREAM_KEY);
-      if (streamLen > BACKPRESSURE_THRESHOLD) {
+      const pending = await getPendingCount(redis);
+      if (pending > BACKPRESSURE_THRESHOLD) {
         console.warn(
-          `[scheduler] backpressure: stream depth ${streamLen} > ${BACKPRESSURE_THRESHOLD}, skipping cycle`
+          `[scheduler] backpressure: ${pending} pending messages > ${BACKPRESSURE_THRESHOLD}, skipping cycle`
         );
         return;
       }

@@ -45,6 +45,32 @@ function parseMessage(id: string, fields: string[]): WeatherRecord {
   };
 }
 
+const E2E_LATENCY_KEY  = "weather:metrics:e2e_avg_ms";
+const E2E_STALE_KEY    = "weather:metrics:e2e_stale";   // set when catch-up mode detected
+const E2E_ALPHA        = 0.1;  // EMA smoothing factor
+// Messages older than 30s are considered backlog catch-up, not steady-state E2E.
+// Tracking their latency would skew the metric by minutes.
+const E2E_STALE_THRESHOLD_MS = 30_000;
+
+async function updateE2eLatency(redis: Redis, recordedAt: string): Promise<void> {
+  const latencyMs = Date.now() - new Date(recordedAt).getTime();
+  if (latencyMs < 0) return; // clock skew guard
+
+  if (latencyMs > E2E_STALE_THRESHOLD_MS) {
+    // Catch-up mode: processor is processing old messages, not real-time.
+    // Don't pollute E2E metric. Set stale flag so dashboard can show context.
+    await redis.set(E2E_STALE_KEY, "1", "EX", 15);
+    return;
+  }
+
+  // Clear stale flag — we're back to steady-state
+  await redis.del(E2E_STALE_KEY);
+  const prev  = await redis.get(E2E_LATENCY_KEY);
+  const prevMs = prev ? parseFloat(prev) : latencyMs;
+  const ema    = prevMs + E2E_ALPHA * (latencyMs - prevMs); // exponential moving average
+  await redis.set(E2E_LATENCY_KEY, ema.toFixed(0), "EX", 60);
+}
+
 async function processMessages(
   redis: Redis,
   messages: [string, string[]][],
@@ -59,6 +85,8 @@ async function processMessages(
       // InfluxDB deduplicates by (measurement + tags + timestamp) so
       // reprocessing the same message is safe — it just overwrites.
       await redis.xack(STREAM_KEY, GROUP_NAME, id);
+      // Track end-to-end latency: observation time → InfluxDB write
+      await updateE2eLatency(redis, record.recorded_at);
     } catch (err: any) {
       console.error(`[consumer] failed to process message ${id}: ${err.message}`);
     }

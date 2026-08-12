@@ -98,6 +98,75 @@ body {
   color: var(--text-muted);
 }
 
+/* Health dot + InfluxDB status in header */
+.header-status-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.health-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.health-dot.healthy {
+  background: var(--accent-green);
+  box-shadow: 0 0 0 0 var(--accent-green);
+  animation: pulse-green 2s infinite;
+}
+
+.health-dot.degraded {
+  background: var(--accent-yellow);
+  box-shadow: 0 0 0 0 var(--accent-yellow);
+  animation: pulse-yellow 2s infinite;
+}
+
+@keyframes pulse-green {
+  0%   { box-shadow: 0 0 0 0 rgba(74, 222, 128, 0.5); }
+  70%  { box-shadow: 0 0 0 6px rgba(74, 222, 128, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(74, 222, 128, 0); }
+}
+
+@keyframes pulse-yellow {
+  0%   { box-shadow: 0 0 0 0 rgba(251, 191, 36, 0.5); }
+  70%  { box-shadow: 0 0 0 6px rgba(251, 191, 36, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(251, 191, 36, 0); }
+}
+
+.health-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.health-dot.healthy + .health-label { color: var(--accent-green); }
+.health-dot.degraded + .health-label { color: var(--accent-yellow); }
+
+.header-status-sep {
+  color: var(--border);
+  font-size: 0.85rem;
+  margin: 0 2px;
+}
+
+.infra-chip {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  padding: 3px 8px;
+  letter-spacing: 0.03em;
+  transition: border-color 0.3s, color 0.3s;
+}
+
+.infra-chip.ok    { border-color: var(--accent-green); color: var(--accent-green); }
+.infra-chip.error { border-color: var(--accent-red);   color: var(--accent-red); }
+
 .btn-toggle {
   display: flex;
   align-items: center;
@@ -140,48 +209,163 @@ body {
 
 .pipeline-bar {
   display: flex;
-  gap: 8px;
-  padding: 12px 24px;
+  align-items: stretch;
+  gap: 16px;
+  padding: 10px 24px;
   background: var(--bg-secondary);
   border-bottom: 1px solid var(--border);
   overflow-x: auto;
 }
 
+/* Group: Fetcher / Processor */
+.chip-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.chip-group-label {
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding-left: 2px;
+}
+
+.chip-group-chips {
+  display: flex;
+  gap: 8px;
+}
+
+/* Vertical divider between groups */
+.chip-group-divider {
+  width: 1px;
+  background: var(--border);
+  margin: 4px 4px;
+  align-self: stretch;
+}
+
 .status-chip {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  padding: 8px 16px;
+  align-items: flex-start;
+  gap: 1px;
+  padding: 8px 14px;
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  min-width: 100px;
-  transition: all 0.3s;
+  min-width: 110px;
+  cursor: default;
+  transition: border-color 0.3s;
 }
 
 .chip-label {
-  font-size: 0.7rem;
+  font-size: 0.65rem;
   color: var(--text-muted);
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.06em;
   font-weight: 600;
 }
 
 .chip-value {
-  font-size: 1.1rem;
-  font-weight: 600;
+  font-size: 1rem;
+  font-weight: 700;
   color: var(--text-primary);
   font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+}
+
+.chip-sub {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  margin-top: 1px;
+}
+
+/* Mini progress bar inside queue chip */
+.chip-progress-wrap {
+  width: 100%;
+  height: 3px;
+  background: var(--border);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-top: 3px;
+}
+
+.chip-progress-bar {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--accent-green);
+  transition: width 0.4s ease, background 0.3s;
 }
 
 .status-chip.ok    { border-color: var(--accent-green); }
 .status-chip.warn  { border-color: var(--accent-yellow); }
 .status-chip.crit  { border-color: var(--accent-red); }
 
-.status-chip.ok .chip-value   { color: var(--accent-green); }
+.status-chip.ok   .chip-value { color: var(--accent-green); }
 .status-chip.warn .chip-value { color: var(--accent-yellow); }
 .status-chip.crit .chip-value { color: var(--accent-red); }
+
+.status-chip.ok   .chip-progress-bar { background: var(--accent-green); }
+.status-chip.warn .chip-progress-bar { background: var(--accent-yellow); }
+.status-chip.crit .chip-progress-bar { background: var(--accent-red); }
+
+/* ─── Tooltip ───────────────────────────────────────────── */
+
+.chip-tooltip {
+  position: fixed;
+  z-index: 9999;
+  background: #1e2d42;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-xs);
+  padding: 7px 12px;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  max-width: 260px;
+  line-height: 1.5;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+}
+
+.chip-tooltip.visible {
+  opacity: 1;
+}
+
+/* ─── Pipeline History Chart ─────────────────────────────── */
+
+.pipeline-history-section {
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+  padding: 6px 48px 10px;
+}
+
+.pipeline-history-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 4px;
+}
+
+.pipeline-history-label {
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.pipeline-history-chart-wrap {
+  height: 65px;
+  position: relative;
+  max-width: 900px;
+  padding: 0 8px;
+}
 
 /* ─── Main Grid ─────────────────────────────────────────── */
 
@@ -224,7 +408,7 @@ body {
 
 .summary-cards {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 10px;
 }
 
@@ -495,7 +679,7 @@ body {
   }
 
   .summary-cards {
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(2, 1fr);
   }
 }
 
@@ -506,6 +690,11 @@ body {
 
   .pipeline-bar {
     flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .chip-group-divider {
+    display: none;
   }
 
   #header {

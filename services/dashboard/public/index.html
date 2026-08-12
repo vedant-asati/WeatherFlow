@@ -19,6 +19,12 @@
       <span class="header-subtitle">Pipeline Dashboard</span>
     </div>
     <div class="header-right">
+      <div class="header-status-group">
+        <span id="pipeline-health" class="health-dot" title="Pipeline health"></span>
+        <span id="pipeline-health-label" class="health-label">—</span>
+        <span class="header-status-sep">|</span>
+        <span id="influx-status" class="infra-chip" title="InfluxDB connection">InfluxDB —</span>
+      </div>
       <span id="last-updated" class="last-updated">—</span>
       <button id="refresh-toggle" class="btn-toggle" title="Toggle auto-refresh">
         <span class="toggle-dot"></span>
@@ -27,31 +33,96 @@
     </div>
   </header>
 
-  <!-- Pipeline Status Bar -->
+  <!-- Pipeline Status Bar — two groups: Fetcher | Processor -->
   <section id="pipeline-bar" class="pipeline-bar">
-    <div class="status-chip" id="chip-cycle">
-      <span class="chip-label">Cycle</span>
-      <span class="chip-value" id="val-cycle">—</span>
+
+    <!-- Fetcher group -->
+    <div class="chip-group">
+      <span class="chip-group-label">Fetcher</span>
+      <div class="chip-group-chips">
+
+        <div class="status-chip" id="chip-cycle"
+          data-tooltip="Current fetch cycle number and how far into the 60s window we are.">
+          <span class="chip-label">Cycle</span>
+          <span class="chip-value" id="val-cycle">—</span>
+          <span class="chip-sub" id="val-cycle-elapsed"></span>
+        </div>
+
+        <div class="status-chip" id="chip-queue"
+          data-tooltip="Locations still waiting in the Redis queue this cycle. Workers pop from this list via BRPOP.">
+          <span class="chip-label">Queue</span>
+          <span class="chip-value" id="val-queue">—</span>
+          <span class="chip-progress-wrap">
+            <span class="chip-progress-bar" id="queue-progress-bar"></span>
+          </span>
+          <span class="chip-sub" id="val-queue-sub"></span>
+        </div>
+
+        <div class="status-chip" id="chip-cooldown"
+          data-tooltip="Token bucket rate limiter. Allows up to 8 req/s across all workers. Enters cooldown for 30s after a 429 response.">
+          <span class="chip-label">Rate Limiter</span>
+          <span class="chip-value" id="val-cooldown">—</span>
+          <span class="chip-sub" id="val-cooldown-sub"></span>
+        </div>
+
+        <div class="status-chip" id="chip-fetch-latency"
+          data-tooltip="Average API response time (p-avg) from Open-Meteo. Sourced from Prometheus histogram. High latency may indicate upstream slowness.">
+          <span class="chip-label">Fetch Latency</span>
+          <span class="chip-value" id="val-fetch-latency">—</span>
+          <span class="chip-sub">avg ms</span>
+        </div>
+
+      </div>
     </div>
-    <div class="status-chip" id="chip-queue">
-      <span class="chip-label">Queue</span>
-      <span class="chip-value" id="val-queue">—</span>
+
+    <!-- Divider -->
+    <div class="chip-group-divider"></div>
+
+    <!-- Processor group -->
+    <div class="chip-group">
+      <span class="chip-group-label">Processor</span>
+      <div class="chip-group-chips">
+
+        <div class="status-chip" id="chip-stream"
+          data-tooltip="Total entries in the Redis stream (XLEN). Includes already-processed history. High values are normal — only pending count matters for backpressure.">
+          <span class="chip-label">Stream</span>
+          <span class="chip-value" id="val-stream">—</span>
+          <span class="chip-sub" id="val-stream-sub"></span>
+        </div>
+
+        <div class="status-chip" id="chip-pending"
+          data-tooltip="Un-ACKed messages (PEL count). This is the real backpressure signal — when pending exceeds 5000, the scheduler skips cycles until the processor catches up.">
+          <span class="chip-label">Pending</span>
+          <span class="chip-value" id="val-pending">—</span>
+          <span class="chip-sub">unacked msgs</span>
+        </div>
+
+        <div class="status-chip" id="chip-e2e-latency"
+          data-tooltip="End-to-end latency: time from recorded_at (API observation) to InfluxDB write. Exponential moving average. Includes fetch time + queue wait + processing time.">
+          <span class="chip-label">E2E Latency</span>
+          <span class="chip-value" id="val-e2e-latency">—</span>
+          <span class="chip-sub">avg ms</span>
+        </div>
+
+        <div class="status-chip" id="chip-success-rate"
+          data-tooltip="API call success rate this run. Sourced from Prometheus counters on the fetcher. Drops on 429 cooldowns, network errors, or timeouts.">
+          <span class="chip-label">Success Rate</span>
+          <span class="chip-value" id="val-success-rate">—</span>
+          <span class="chip-sub" id="val-success-sub"></span>
+        </div>
+
+      </div>
     </div>
-    <div class="status-chip" id="chip-stream">
-      <span class="chip-label">Stream</span>
-      <span class="chip-value" id="val-stream">—</span>
+
+  </section>
+
+  <!-- Pipeline History Chart -->
+  <section id="pipeline-history-section" class="pipeline-history-section">
+    <div class="pipeline-history-header">
+      <span class="pipeline-history-label">Queue &amp; Stream — last 5 min</span>
     </div>
-    <div class="status-chip" id="chip-pending">
-      <span class="chip-label">Pending</span>
-      <span class="chip-value" id="val-pending">—</span>
-    </div>
-    <div class="status-chip" id="chip-backpressure">
-      <span class="chip-label">Backpressure</span>
-      <span class="chip-value" id="val-backpressure">—</span>
-    </div>
-    <div class="status-chip" id="chip-cooldown">
-      <span class="chip-label">Rate Limiter</span>
-      <span class="chip-value" id="val-cooldown">—</span>
+    <div class="pipeline-history-chart-wrap">
+      <canvas id="pipeline-history-chart"></canvas>
     </div>
   </section>
 
@@ -67,28 +138,21 @@
           <span class="card-icon">🌍</span>
           <div class="card-body">
             <span class="card-number" id="sum-cities">—</span>
-            <span class="card-label">Cities</span>
-          </div>
-        </div>
-        <div class="card summary-card">
-          <span class="card-icon">🌡️</span>
-          <div class="card-body">
-            <span class="card-number" id="sum-avg-temp">—</span>
-            <span class="card-label">Avg Temp</span>
-          </div>
-        </div>
-        <div class="card summary-card">
-          <span class="card-icon">❄️</span>
-          <div class="card-body">
-            <span class="card-number" id="sum-min-temp">—</span>
-            <span class="card-label">Min</span>
+            <span class="card-label">Locations</span>
           </div>
         </div>
         <div class="card summary-card">
           <span class="card-icon">🔥</span>
           <div class="card-body">
-            <span class="card-number" id="sum-max-temp">—</span>
-            <span class="card-label">Max</span>
+            <span class="card-number" id="sum-hottest-temp">—</span>
+            <span class="card-label" id="sum-hottest-city">Hottest</span>
+          </div>
+        </div>
+        <div class="card summary-card">
+          <span class="card-icon">❄️</span>
+          <div class="card-body">
+            <span class="card-number" id="sum-coldest-temp">—</span>
+            <span class="card-label" id="sum-coldest-city">Coldest</span>
           </div>
         </div>
         <div class="card summary-card">
@@ -158,6 +222,9 @@
       </section>
     </div>
   </main>
+
+  <!-- Tooltip -->
+  <div id="tooltip" class="chip-tooltip" role="tooltip"></div>
 
   <script src="/app.js"></script>
 </body>

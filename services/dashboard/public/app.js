@@ -119,11 +119,11 @@ async function fetchPipelineStatus() {
     if (data.rateLimiter.cooldownActive) {
       const secs = Math.ceil(data.rateLimiter.cooldownTtlMs / 1000);
       setText("val-cooldown", `COOLDOWN ${secs}s`);
-      setText("val-cooldown-sub", `${cooldownCount} cooldown${cooldownCount !== 1 ? "s" : ""} this run`);
+      setText("val-cooldown-sub", `${cooldownCount} cooldown${cooldownCount !== 1 ? "s" : ""} total`);
       setChipState("chip-cooldown", "warn");
     } else {
       setText("val-cooldown", `${rps} req/s`);
-      setText("val-cooldown-sub", cooldownCount > 0 ? `${cooldownCount} cooldown${cooldownCount !== 1 ? "s" : ""} this run` : "OK");
+      setText("val-cooldown-sub", cooldownCount > 0 ? `${cooldownCount} cooldown${cooldownCount !== 1 ? "s" : ""} total` : "OK");
       setChipState("chip-cooldown", "ok");
     }
 

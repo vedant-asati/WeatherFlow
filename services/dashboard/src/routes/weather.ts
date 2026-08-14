@@ -7,7 +7,10 @@ export function createWeatherRouter(queryApi: QueryApi, bucket: string): Router 
   // GET /api/weather/latest?city=London  (city is optional)
   router.get("/latest", async (req: Request, res: Response) => {
     try {
-      const city = req.query.city as string | undefined;
+      const rawCity = req.query.city as string | undefined;
+      // Sanitize: allow only alphanumeric, spaces, hyphens, underscores, periods.
+      // Prevents Flux query injection via crafted city param.
+      const city = rawCity ? rawCity.replace(/[^a-zA-Z0-9 _\-\.]/g, "") : undefined;
 
       let flux = `
         from(bucket: "${bucket}")
@@ -114,7 +117,9 @@ export function createWeatherRouter(queryApi: QueryApi, bucket: string): Router 
   // GET /api/weather/:city/history?range=6h
   router.get("/:city/history", async (req: Request, res: Response) => {
     try {
-      const city = req.params.city;
+      const rawCity = req.params.city;
+      // Sanitize city name before injecting into Flux query
+      const city = rawCity.replace(/[^a-zA-Z0-9 _\-\.]/g, "");
       const range = req.query.range as string ?? "1h";
 
       // Validate range — allow: 1h, 6h, 12h, 1d, 3d, 7d

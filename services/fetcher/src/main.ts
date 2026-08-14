@@ -1,6 +1,6 @@
 import Redis from "ioredis";
 import { startScheduler } from "./scheduler";
-import { startWorkers } from "./worker";
+import { startWorkers, setShuttingDown } from "./worker";
 import { RateLimiter } from "./rate-limiter";
 import { startServer } from "./server";
 
@@ -26,6 +26,8 @@ async function main() {
 
   const shutdown = async () => {
     console.log("[main] shutting down...");
+    setShuttingDown();        // signal workers to exit their loop after current item
+    await new Promise(r => setTimeout(r, 200)); // brief grace period for in-progress items
     await redis.quit();
     process.exit(0);
   };

@@ -84,6 +84,7 @@ async function main() {
       fetcherMetricsRaw = "";
     }
   };
+  await scrapeFetcher();             // prime immediately so first request isn't null
   setInterval(scrapeFetcher, 5_000);
 
   // Pipeline history sampler — runs every 5s, fills the ring buffer
@@ -99,6 +100,7 @@ async function main() {
       // Redis may be temporarily unavailable; skip sample silently
     }
   };
+  await samplePipeline();            // prime immediately so chart isn't blank on first load
   setInterval(samplePipeline, 5000);
 
   // Express
@@ -108,15 +110,17 @@ async function main() {
   // Static files — the dashboard UI
   app.use(express.static(path.join(__dirname, "..", "public")));
 
+  // Pipeline history — served from the ring buffer.
+  // Registered BEFORE the pipeline router to guarantee Express resolves it first,
+  // regardless of what routes the router internally handles.
+  app.get("/api/pipeline/history", (_req, res) => {
+    res.json(pipelineHistory);
+  });
+
   // API routes
   app.use("/api/pipeline", createPipelineRouter(redis));
   app.use("/api/weather",  createWeatherRouter(queryApi, INFLUX_BUCKET));
   app.use("/api/stream",   createStreamRouter(redis));
-
-  // Pipeline history — served from the ring buffer
-  app.get("/api/pipeline/history", (_req, res) => {
-    res.json(pipelineHistory);
-  });
 
   app.listen(PORT, () => {
     console.log(`[dashboard] listening on port ${PORT}`);

@@ -41,7 +41,9 @@ axiosRetry(httpClient, {
   retries: 5,
   retryCondition: (err) => {
     const status = err.response?.status ?? 0;
-    return axiosRetry.isNetworkError(err) || [429, 500, 502, 503, 504].includes(status);
+    // Do NOT retry 429 — that signals rate limit hit. notifyThrottled() handles it
+    // at the worker level. Retrying here burns extra quota before cooldown kicks in.
+    return axiosRetry.isNetworkError(err) || [500, 502, 503, 504].includes(status);
   },
   retryDelay: (retryCount, err) => {
     const retryAfter = err.response?.headers?.["retry-after"];

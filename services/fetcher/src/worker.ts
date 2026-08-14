@@ -14,6 +14,11 @@ const analyticsMap = new Map<string, { ok: number; fail: number; timeout: number
 let activeCycleId = 0;
 let cycleStartMs  = 0;
 
+// Shutdown flag — set to true before redis.quit() so workers finish current item
+// and exit their loop instead of being killed mid-flight.
+let shuttingDown = false;
+export function setShuttingDown(): void { shuttingDown = true; }
+
 function getBucket(cycleId: number, secondOffset: number) {
   const key = `${cycleId}:${secondOffset}`;
   if (!analyticsMap.has(key)) {
@@ -25,7 +30,7 @@ function getBucket(cycleId: number, secondOffset: number) {
 async function runWorker(id: number, redis: Redis, limiter: RateLimiter): Promise<void> {
   console.log(`[worker-${id}] started`);
 
-  while (true) {
+  while (!shuttingDown) {
     try {
       const item = await redis.brpop(QUEUE_KEY, 5);
       if (!item) continue;
@@ -33,6 +38,11 @@ async function runWorker(id: number, redis: Redis, limiter: RateLimiter): Promis
       const [cycleIdStr, startMsStr] = await redis.mget(CYCLE_KEY, CYCLE_START);
       const cycleId = parseInt(cycleIdStr ?? "0");
       if (cycleId !== activeCycleId) {
+        // New cycle started — clear old buckets to prevent unbounded memory growth.
+        // analyticsMap otherwise accumulates 60 buckets × N cycles indefinitely.
+        for (const key of analyticsMap.keys()) {
+          if (!key.startsWith(`${cycleId}:`)) analyticsMap.delete(key);
+        }
         activeCycleId = cycleId;
         cycleStartMs  = parseInt(startMsStr ?? String(Date.now()));
       }
